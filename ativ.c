@@ -12,7 +12,7 @@
 #include <time.h>
 #include <mpi.h>     
 
-#define THREAD_NUM 9    // Tamanho do pool de threads
+#define THREAD_NUM 3    // Tamanho do pool de threads
 #define BUFFER_SIZE 6 // Númermo máximo de tarefas enfileiradas
 
 
@@ -21,14 +21,14 @@ typedef struct Clock {
 } Clock;
 //relogio para salvar as snapshot
 typedef struct SnapshotState {
-    Clock vectorClock
+    Clock vectorClock[10];
 } SnapshotState;
 
 int snapshotInProgress = 0;
 
-Clock clock = {{0,0,0,0}};
+//Clock clock = {0,0,0,0};
 
-Clock clock2 = {{-1,-1,-1,-1}};
+Clock clock2 = {-1,-1,-1,-1};
 
 pthread_t thread[THREAD_NUM]; 
 
@@ -54,59 +54,46 @@ pthread_cond_t condEmpty2;
 
 void Event(int pid, Clock clock){
    clock.p[pid]++;
-  printf("%d %d %d event Process: %d\n",clock->p[0],clock->p[1],clock->p[2],pid);
+  printf("%d %d %d event Process: %d\n",clock.p[0],clock.p[1],clock.p[2],pid);
 }
 
 void Send(int pid, Clock clock,int pid2){
    clock.p[pid]++;
-   submitTask2(clock)
-  //MPI_Send(clock->p, 4, MPI_INT, pid2, 0, MPI_COMM_WORLD); 
-  printf("%d %d %d send Process: %d\n",clock->p[0],clock->p[1],clock->p[2],pid);
+   submitTask2(clock);
+  //MPI_Send(clock.p, 4, MPI_INT, pid2, 0, MPI_COMM_WORLD); 
+  printf("%d %d %d send Process: %d\n",clock.p[0],clock.p[1],clock.p[2],pid);
 }
 
 void recieve(int pid, Clock clock){
    clock.p[pid]++;
    int p[4];
-   p = getTask1(pid).p
+   p = getTask1(pid).p;
    
    //MPI_Recv(p, 4, MPI_INT, pid2, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-   if(clock->p[0]<p[0])
-      clock->p[0]=p[0]; 
-    if(clock->p[1]<p[1])
-         clock->p[1]=p[1]; 
-    if(clock->p[2]<p[2])
-         clock->p[2]=p[2]; 
-printf("%d %d %d recieve Process: %d\n",clock->p[0],clock->p[1],clock->p[2],pid);
+   if(clock.p[0]<p[0])
+      clock.p[0]=p[0]; 
+    if(clock.p[1]<p[1])
+         clock.p[1]=p[1]; 
+    if(clock.p[2]<p[2])
+         clock.p[2]=p[2]; 
+printf("%d %d %d recieve Process: %d\n",clock.p[0],clock.p[1],clock.p[2],pid);
 
-}
-void criarThreads(int n){
-   
-   for (int i = 0; i < THREAD_NUM-3; i++){  
-       if(i%2==0)
-      if (pthread_create(&thread[i], NULL, &startRecepcaoThread, (void*) n) != 0) {
-         perror("Failed to create the thread");
-      }  
-      else
-       if (pthread_create(&thread[i], NULL, &startEnvioThread, (void*) n) != 0) {
-         perror("Failed to create the thread");
-      } 
-   }
 }
 
 Clock getTask2(int pid){
    pthread_mutex_lock(&mutex2);
    
-   while (taskCount[pid] == 0&& fila2[0][pid].p[4]==pid){
+   while (taskCount == 0){
         printf("vazio\n");
       pthread_cond_wait(&condEmpty, &mutex);
    }
    
    Clock clock = fila2[0];
    int i;
-   for (i = 0; i < taskCount[pid] - 1; i++){
+   for (i = 0; i < taskCount - 1; i++){
       fila1[i] = fila1[i+1];
    }
-   taskCount[pid]--;
+   taskCount--;
    
    pthread_mutex_unlock(&mutex2);
    pthread_cond_signal(&condFull2);
@@ -116,17 +103,17 @@ Clock getTask2(int pid){
 Clock getTask1(int pid){
    pthread_mutex_lock(&mutex);
    
-   while (taskCount[pid] == 0&& fila1[0][pid].p==pid){
+   while (taskCount == 0){
         printf("vazio\n");
       pthread_cond_wait(&condEmpty, &mutex);
    }
    
    Clock clock = fila1[0];
    int i;
-   for (i = 0; i < taskCount[pid] - 1; i++){
+   for (i = 0; i < taskCount - 1; i++){
       fila1[i] = fila1[i+1];
    }
-   taskCount[pid]--;
+   taskCount--;
    
    pthread_mutex_unlock(&mutex);
    pthread_cond_signal(&condFull);
@@ -185,33 +172,23 @@ int main(int argc, char* argv[]) {
       if (pthread_create(&thread[0], NULL, &mainThread0, (void*) 0) != 0) {
          perror("Failed to create the thread");
       }  
-      if (pthread_create(&thread[1], NULL, &startRecepcaoThread, (void*) 0) != 0) {
+    
+   } else if (my_rank == 1) {  
+      if (pthread_create(&thread[0], NULL, &mainThread1, (void*) 1) != 0) {
+         perror("Failed to create the thread");
+      } 
+   } else if (my_rank == 2) {  
+      if (pthread_create(&thread[0], NULL, &mainThread2, (void*) 2) != 0) {
+         perror("Failed to create the thread");
+      }  
+      
+   }
+     if (pthread_create(&thread[1], NULL, &startRecepcaoThread, (void*) 0) != 0) {
          perror("Failed to create the thread");
       }  
        if (pthread_create(&thread[2], NULL, &startEnvioThread, (void*) 0) != 0) {
          perror("Failed to create the thread");
       } 
-   } else if (my_rank == 1) {  
-      if (pthread_create(&thread[3], NULL, &mainThread1, (void*) 1) != 0) {
-         perror("Failed to create the thread");
-      } 
-      if (pthread_create(&thread[4], NULL, &startRecepcaoThread, (void*) 1) != 0) {
-         perror("Failed to create the thread");
-      }  
-       if (pthread_create(&thread[5], NULL, &startEnvioThread, (void*) 1) != 0) {
-         perror("Failed to create the thread");
-      } 
-   } else if (my_rank == 2) {  
-      if (pthread_create(&thread[6], NULL, &mainThread2, (void*) 2) != 0) {
-         perror("Failed to create the thread");
-      }  
-      if (pthread_create(&thread[7], NULL, &startRecepcaoThread, (void*) 2) != 0) {
-         perror("Failed to create the thread");
-      }  
-       if (pthread_create(&thread[8], NULL, &startEnvioThread, (void*) 2) != 0) {
-         perror("Failed to create the thread");
-      } 
-   }
 
    
    for (int i = 0; i < THREAD_NUM; i++){  
@@ -234,56 +211,65 @@ int main(int argc, char* argv[]) {
  /* main */
 /*-------------------------------------------------------------------*/
 void startRecepcaoThread(void args) {
-   for(i=0;i<3;i++){
+   Clock clock;
+   int p[4]
+   for(int i=0;i<3;i++){
    MPI_Recv(p, 4, MPI_INT,  MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
    clock.p=p;
-   if(clock.p =={-1,-1,-1,-1} ){
+   if(clock.p[0] ==-1){
         //salvar a snapshot
-        snapshotState0.vectorClock = clock;
+        snapshotInProgress=1;
    }
+   int j;
+   if(snapshotInProgress==0)
+      j=0;
+   if(snapshotInProgress==1){
+      printf("clock = %d %d %d",clock.p[0],clock.p[1],clock.p[2]);
+        snapshotState.vectorClock = clock;
+        j++;
+   }
+   
    submitTask1(clock);
       
    }
-   return NULL;
 } 
 
 void startEnvioThread(void args) {
    int process=args;
-   for(i=0;i<3;i++){
+   for(int i=0;i<3;i++){
    Clock clock = getTask2(process);
    MPI_Send(clock.p, 4, MPI_INT, clock.p[4], 0, MPI_COMM_WORLD);
    }
-   return NULL;
 } 
 
 void mainThread0(void args) {
-   updateClock();
+ Clock clock={0,0,0,0};
    Event(0, clock);
    send(0, clock,1);
-   if (snapshotInProgress)==1 {
+   
         // Capturar o estado local em snapshotState
-        snapshotState0.vectorClock = clock;
         // enviar marcador para todos os processos 
         // faltar alterar o paramentro para enviar como um broadcast
-        MPI_Send(clock2.p, 4, MPI_INT, clock2.p[4], 0, MPI_COMM_WORLD);
+        for(int i=0;i<3;i++){
+        MPI_Send(clock2.p, 4, MPI_INT, i, 0, MPI_COMM_WORLD);
+        }
         // talvez essa variavel n seja precise quando implemenatr os mutex
-        snapshotInProgress = 0;
+        snapshotInProgress =1;
 
-    }
+    
    send(0, clock,2);
    send((0, clock,1));
    Event(0, clock);
-   return NULL;
 } 
 void mainThread1(void args) {
+ Clock clock={0,0,0,0};
    recieve(1,clock);
    send((1, clock,0));
-   return NULL;
 }
 
 void mainThread2(void args) {
+ Clock clock={0,0,0,0};
    recieve(2,clock);
    send(2, clock,0);
    Event(2, clock);
-   return NULL;
 }
